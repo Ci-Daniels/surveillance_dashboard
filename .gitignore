@@ -1,0 +1,25 @@
+# Python virtual environment
+.venv/
+env/
+.env/
+.vscode
+
+# Python cache and compiled files
+__pycache__/
+*.py[cod]
+*.so
+*.tif
+
+# Shapefiles
+*.shp
+*.dbf
+*.prj
+*.shx
+*.cpg
+
+# Environment and config files
+*.env
+
+
+
+

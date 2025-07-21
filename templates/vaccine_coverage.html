@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vaccine Coverage - Animal Surveillance Dashboard</title>
+
+    <!--Icon logo-->
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/vet-logo.png') }}">
+    <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='img/vet-logo.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16"  href="{{ url_for('static', filename='img/vet-logo.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/vet-logo.png') }}">
+
+    <!-- Libraries CSS Files -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/4.6.0/js/bootstrap.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/font-awesome/css/font-awesome.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/animate/animate.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/ionicons/css/ionicons.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/owlcarousel/assets/owl.carousel.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='lib/lightbox/css/lightbox.min.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Main Stylesheet File -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <img src="/static/img/vet-logo.png" alt="Logo" class="logo-icon">
+        <div class="logo">Animal Surveillance Dashboard</div>
+        <ul class="nav-links">
+            <li><a href="/">Home</a></li>
+            <li><a href="/#about">About</a></li>
+            <li><a href="/updates">Updates</a></li>
+            <li class="dropdown">
+                <a href="/animal-surveillance/national">Animal Surveillance</a>
+                <div class="dropdown-content">
+                    <a href="/animal-surveillance/national">National Overview</a>
+                    <a href="/animal-surveillance/county">County Surveillance</a>
+                    <a href="/animal-surveillance/disease">Disease Thresholds</a>
+                    <a href="/animal-surveillance/population">Animal Population</a>
+                </div>
+            </li>
+            <li class="dropdown">
+                <a href="/priority-diseases/asf">Priority Diseases</a>
+                <div class="dropdown-content scrollable-dropdown">
+                    <a href="/priority-diseases/asf">African Swine Fever (ASF)</a>
+                    <a href="/priority-diseases/anthrax">Anthrax</a>
+                    <a href="/priority-diseases/bru">Brucellosis</a>
+                    <a href="/priority-diseases/bov">Bovine Pleuropneumonia (CBPP)</a>
+                    <a href="/priority-diseases/cap">Caprine Pleuropneumonia (CCPP)</a>
+                    <a href="/priority-diseases/fmd">Foot and Mouth Disease (FMD)</a>
+                    <a href="/priority-diseases/lump">Lumpy Skin Disease (LSD)</a>
+                    <a href="/priority-diseases/ncd">Newcastle Disease (NCD)</a>
+                    <a href="/priority-diseases/ppr">Peste des Petit Ruminants (PPR)</a>
+                    <a href="/priority-diseases/rab">Rabies</a>
+                    <a href="/priority-diseases/rvf">Rift Valley Fever (RVF)</a>
+                    <a href="/priority-diseases/gp">Goat Pox</a>
+                </div>
+            </li>
+            <li><a href="/vaccine-coverage" class="active">Vaccine Coverage</a></li>
+        </ul>
+    </nav>
+
+    <main>
+        <h1>Vaccine Coverage</h1>
+        <p>Content for Vaccine Coverage will be added here.</p>
+    </main>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <h3>Animal Surveillance Dashboard</h3>
+                <p>Comprehensive monitoring of animal health across Kenya for evidence-based policy making.</p>
+            </div>
+            <div class="footer-section">
+                <h3>Resources</h3>
+                <a href="#home">Home</a>
+                <a href="#about">About</a>
+                <a href="#contact">Contact</a>
+                <a href="updates.html">Updates</a>
+                <a href="vaccine-coverage.html">Vaccine Coverage</a>
+            </div>
+            <div class="footer-section">
+                <h3>Surveillance</h3>
+                <a href="surveillance.html#national">National Overview</a>
+                <a href="surveillance.html#county">County Surveillance</a>
+                <a href="surveillance.html#kajiado">Kajiado Focus</a>
+                <a href="surveillance.html#thresholds">Disease Thresholds</a>
+                <a href="surveillance.html#population">Animal Population</a>
+            </div>
+            <div class="footer-section">
+                <h3>Contacts</h3>
+                <p>Department of Veterinary Services</p>
+                <li><span class="ion-ios-telephone"></span> (+254) 20 271 8870 </li>
+                <li><span class="ion-email"></span><a href="mailto:infodvs@kilimo.go.ke" className="hover:underline">infodvs@kilimo.go.ke</a></p></li>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2025 Animal Surveillance Dashboard - Department of Veterinary Services. All rights reserved.</p>
+        </div>
+    </footer>
+</body>
+</html>
