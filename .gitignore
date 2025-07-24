@@ -10,12 +10,7 @@ __pycache__/
 *.so
 *.tif
 
-# Shapefiles
-*.shp
-*.dbf
-*.prj
-*.shx
-*.cpg
+
 
 # Environment and config files
 *.env
