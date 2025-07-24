@@ -25,8 +25,11 @@
 </head>
 <body>
     <nav class="navbar">
-        <img src="/static/img/vet-logo.png" alt="Logo" class="logo-icon">
-        <div class="logo">Priority Diseases Surveillance</div>
+        <div class="navbar-brand">
+            <img src="/static/img/vet-logo.png" alt="Logo" class="logo-icon">
+            <button class="hamburger" aria-label="Toggle menu">☰</button>
+        </div>
+      
         <ul class="nav-links">
             <li><a href="/">Home</a></li>
             <li><a href="/#about">About</a></li>
@@ -58,6 +61,8 @@
                 </div>
             </li>
             <li><a href="/vaccine-coverage">Vaccine Coverage</a></li>
+            <li><a href="{{ url_for('policy')}}">Publications</a></li>
+            <li><a href="{{ url_for('upload_policy') }}">Upload Resources</a></li>
         </ul>
     </nav>
 
@@ -91,18 +96,16 @@
 
         <section class="chart-grid">
             <div class="chart-container">
-                <h3>National Map</h3>
                 <div id="kenyamap" style="width: 100%; height: 600px;"></div>
             </div>
             <div class="chart-container">
-                <h3>Trend Plot</h3>
                 <div id="trend_plot" style="width: 100%; height: 600px;"></div>
             </div>
         </section>
 
         <section class="table-section">
             <div class="table-container">
-                <h3>Disease Burden Table</h3>
+                <h3>Disease Summary</h3>
                 <table id="disease_table" class="table table-bordered" style="width: 100%;"></table>
             </div>
         </section>
@@ -126,7 +129,6 @@
                 <h3>Resources</h3>
                 <a href="#home">Home</a>
                 <a href="#about">About</a>
-                <a href="#contact">Contact</a>
                 <a href="updates.html">Updates</a>
                 <a href="vaccine-coverage.html">Vaccine Coverage</a>
             </div>
@@ -134,7 +136,6 @@
                 <h3>Surveillance</h3>
                 <a href="surveillance.html#national">National Overview</a>
                 <a href="surveillance.html#county">County Surveillance</a>
-                <a href="surveillance.html#kajiado">Kajiado Focus</a>
                 <a href="surveillance.html#thresholds">Disease Thresholds</a>
                 <a href="surveillance.html#population">Animal Population</a>
             </div>
@@ -142,7 +143,7 @@
                 <h3>Contacts</h3>
                 <p>Department of Veterinary Services</p>
                 <li><span class="ion-ios-telephone"></span> (+254) 20 271 8870 </li>
-                <li><span class="ion-email"></span><a href="mailto:infodvs@kilimo.go.ke" className="hover:underline">infodvs@kilimo.go.ke</a></p></li>
+                <li><span class="ion-email"></span><a href="mailto:infodvs@kilimo.go.ke" className="hover:underline">infodvs@kilimo.go.ke</a></li>
             </div>
         </div>
         <div class="footer-bottom">
@@ -159,5 +160,6 @@
     <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
     <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
     <script src="{{ url_for('static', filename='js/priority_diseases.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

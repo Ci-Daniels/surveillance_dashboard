@@ -26,6 +26,24 @@ h1, h2, h3 {
     font-weight: bold;
 }
 
+h2 {
+    color: var(--primary);
+    font-size: 2.0rem;
+    margin-bottom: 0.5rem;
+}
+
+h3 {
+    color: var(--primary);
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+.chart-title{
+    color: var(--text);
+    font-size: 1.3rem;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+    text-align: center;
+}
 /* Navigation Bar */
 .navbar {
     background-color: var(--nav-bg);
@@ -38,6 +56,16 @@ h1, h2, h3 {
     top: 0;
     z-index: 1000;
 }
+
+.hamburger {
+    display: none;
+    font-size: 1.5rem;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #333;
+}
+
 
 .logo {
     font-size: 1.5rem;
@@ -76,6 +104,10 @@ h1, h2, h3 {
 /* Dropdown Menu */
 .dropdown {
     position: relative;
+}
+
+.threshold-dropdown {
+    margin-left: auto;
 }
 
 .dropdown-content {
@@ -237,10 +269,10 @@ h1 {
   /* Filters Section */
   .filters {
     background: white;
-    padding: 2rem;
+    padding: 0.5rem;
     border-radius: var(--border-radius);
     box-shadow: var(--card-shadow);
-    margin-bottom: 2rem;
+    margin-bottom: 0.5rem;
     display: flex;
     gap: 2rem;
     justify-content: center;
@@ -259,6 +291,7 @@ h1 {
     display: flex;
     flex-direction: column;
     min-width: 200px;
+    text-align: center;
 }
 
 .filter-group label {
@@ -293,9 +326,19 @@ h1 {
 
 
 /* KPI Cards */
+#threshold_tab { width: 200px; margin: 20px auto; display: block; }
+.box { border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-bottom: 20px; }
+.box-header { background-color: var(--primary); color: white; padding: 10px; border-radius: 5px 5px 0 0; }
 .kpi-container {
     display: grid;
     grid-template-columns: repeat(6, 1fr);
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.thresh-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
     gap: 1.5rem;
     margin-bottom: 2rem;
 }
@@ -375,6 +418,8 @@ h1 {
     box-sizing: border-box;
 }
 
+
+
 @media (max-width: 768px) {
     .charts {
         grid-template-columns: 1fr;
@@ -385,7 +430,8 @@ h1 {
 }
 
 .table-section,
-.about-section {
+.about-section,
+.chart-section {
     margin-bottom: 2rem;
     width: 100%;
 }
@@ -562,11 +608,11 @@ h1 {
 
  .hero {
     text-align: center;
-    padding: 60px 0;
+    padding: 40px 20px;
     background: var(--primary);
     color: white;
-    margin: -40px -20px 40px -20px;
-    border-radius: 0 0 20px 20px;
+    margin: -40px -4px 40px -4px;
+    border-radius: 0 0 10px 10px;
 }
 
 .hero h1 {
@@ -668,28 +714,76 @@ h1 {
 
 /* Responsive Design */
 @media (max-width: 768px) {
-    .navbar {
-        flex-direction: column;
-        align-items: flex-start;
+    .search-filter { 
+        flex-direction: column; 
+    } 
+    
+    .search-input, .filter-select { 
+        min-width: 100%; 
+    } 
+    
+    .container { 
+        padding: 16px; 
+    }
+    
+    .frontend-view {
+        padding: 20px;
+    }
+    
+    .sidebar {
+        margin-bottom: 24px;
+        position: static;
+    }
+    
+    .pagination-container { 
+        flex-direction: column; 
+        gap: 16px; 
+    }
+    
+    .stats-cards {
+        grid-template-columns: 1fr;
+    }
+    .hamburger {
+        display: block;
     }
 
     .nav-links {
+        display: none;
         flex-direction: column;
         width: 100%;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        background-color: var(--nav-bg, #f8f9fa);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        padding: 1rem;
+    }
+
+    .nav-links.active {
+        display: flex;
     }
 
     .nav-links li {
-        width: 100%;
+        margin: 0.5rem 0;
     }
 
-    .nav-links a {
-        display: block;
-        padding: 0.5rem 0;
+    .dropdown {
+        position: static;
     }
 
     .dropdown-content {
         position: static;
         box-shadow: none;
+        background-color: #f1f1f1;
+        padding-left: 1rem;
+    }
+
+    .dropdown-content.scrollable-dropdown {
+        max-height: 200px;
+    }
+
+    .navbar {
+        padding: 1rem;
     }
 
     .filters {
@@ -715,6 +809,31 @@ h1 {
 
     .chart-row {
         flex-direction: column;
+    }
+}
+
+
+@media (max-width: 480px) {
+    .logo-icon {
+        height: 30px;
+    }
+
+    .navbar {
+        padding: 0.75rem;
+    }
+
+    .nav-links a {
+        font-size: 0.9rem;
+    }
+
+    .btn-primary {
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 12px;
+    }
+    
+    .access-badge {
+        align-self: flex-end;
     }
 }
 

@@ -1,20 +1,129 @@
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
 import os 
+import re
 import json
+from flask_sqlalchemy import SQLAlchemy
+import paramiko
+import pytz
+from sqlalchemy import DateTime, create_engine, inspect, Column, String, Integer
+from flask import session as flask_session
 import markdown2
+import logging
 import pandas as pd
+import numpy as np
 import geopandas as gpd
 from pathlib import Path
 from dotenv import load_dotenv
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+
+load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY')
-
-load_dotenv()  
+#app.secret_key = os.getenv('SECRET_KEY')
+app.secret_key = 'KmU5J1oi3Y8eGm647TXkJmmisgEvIkHPj-s1F91LdXY'
 
 """
-Load Data
+Initialize logging
+"""
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+"""
+SET UP DATABASE CONFIGS
+"""
+"""
+Local db
+"""
+user = os.getenv('DB_USER')
+password = os.getenv('DB_PASSWORD')
+server = os.getenv('DB_SERVER')
+db1 = os.getenv('DB_NAME_1')
+port = os.getenv('DB_PORT')
+
+"""
+Contabo db
+"""
+#user = os.getenv('CONTABO_USER')
+#password = os.getenv('DB_PASSWORD')
+#server = os.getenv('CONTABO_SERVER')
+#db1 = os.getenv('CONTABO_NAME')
+#port = os.getenv('DB_PORT')
+
+"""
+Load the base model
+"""
+Base = declarative_base()
+
+"""
+APP CONFIGURATIONS
+"""
+app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{user}:{password}@{server}:{port}/{db1}'
+app.config['SESSION_PERMANENT'] = False  # session expires when the browser closed
+
+"""
+INITIALIZE CONTABO STORAGE
+"""
+app.config['CONTABO_USER']= os.getenv('CONTABO_USER')
+app.config['CONTABO_PASSWORD'] = os.getenv('DB_PASSWORD')
+app.config['CONTABO_HOST']= os.getenv('CONTABO_SERVER')
+"""
+INITIALIZE POLICIES EXTENSION
+"""
+app.config['UPLOAD_POLICIES'] = '/home/cema/dvs/policies'
+app.config['POLICY_EXTENSIONS'] = {'pdf','png','doc','docx', 'docm'}
+# dvs/policies
+def allowed_files(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower in app.config['POLICY_EXTENSIONS']
+
+"""
+Initialize database connection and SQLAlchemy
+"""
+db = SQLAlchemy(app)
+
+# SQLAlchemy engine to connect to PostgreSQL
+engine1 = create_engine(app.config['SQLALCHEMY_DATABASE_URI'])
+
+"""
+Create a session to add it to the database
+"""
+Session = sessionmaker(bind=engine1)
+session = Session()
+
+"""
+Create database models
+"""
+Base = declarative_base()
+Base.metadata.create_all(engine1)
+
+"""
+MODELS TO UPLOAD FILE ,CATEGORY AND DESCRIPTIONS
+"""
+class User(db.Model):
+    __tablename__ = 'userole'
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    username = db.Column(db.String, nullable=False, unique=True)
+    email = db.Column(db.String, nullable=False, unique=True)
+    workstation = db.Column(db.String, nullable=False)  # e.g., 'National', 'County'
+    contact_number = db.Column(db.String, nullable=False)
+    password = db.Column(db.String, nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.UTC))
+
+class Policy(Base):
+    __tablename__ = 'dvspolicy'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    filename = Column(String, nullable=False, unique=True)
+    category = Column(String, nullable=False)
+    description = Column(String)
+    keywords = Column(String)
+    data_type = Column(String)
+    data_access = Column(String, nullable=False)
+    upload_timestamp = Column(DateTime, default=datetime.now(timezone.utc))
+
+"""
+Load DATA
 """
 # All surveillance data
 all_data = os.getenv('ALL_DATA')
@@ -23,24 +132,36 @@ if not all_data:
 allSurve = pd.read_csv(all_data)
 allSurve['Report_Date'] = pd.to_datetime(allSurve['Report_Date'])
 
+
 # Population data
 all_population = os.getenv('POPULATION_DATA')
 if not all_population:
     raise ValueError("Environment variable 'POPULATION_DATA' is not set.")
 allPopulation = pd.read_csv(all_population)
 
+# moving average
+moving_average = os.getenv('KABS_THRESHOLD')
+if not moving_average:
+    raise ValueError("Environment variable 'KABS_THRESHOLD' is not set.")
+moving_average = pd.read_csv(moving_average)
+
+# Diseases threshold
+disease_threshold = os.getenv('DISEASE_THRESHOLD')
+if not disease_threshold:
+    raise ValueError("Environment variable 'DISEASE_THRESHOLD' is not set.")
+disease_threshold = pd.read_csv(disease_threshold)
+
+
 """
-Load Shapefiles
+LOAD SHAPEFILES
 """
 #county
 shapefile_path = Path('clean_shapefiles/county_shapefile.shp')
 shapefile =gpd.read_file(shapefile_path)
-shapefile_json = json.loads(shapefile.to_json())
 
 #subcounty
 sub_shapefile_path = Path('clean_shapefiles/subcounty_shapefile.shp')
 sub_shapefile =gpd.read_file(sub_shapefile_path)
-sub_shapefile_json = json.loads(sub_shapefile.to_json())
 
 # ward 
 ward_shapefilepath = Path('clean_shapefiles/gadm41_KEN_3.shp')
@@ -52,30 +173,65 @@ ward_shapefile = ward_shapefile.rename(
         'NAME_2': 'sub_county', 
         'NAME_3': 'Ward'
     })
+
+"""
+Standardise county and subcounty names acrtoss the datasets
+"""
+county_name_mapping = {
+    'Elgeyo Marakwet': 'Elgeyo-Marakwet',
+    'Elgeyo/Marakwet': 'Elgeyo-Marakwet',
+    'Tharaka Nithi': 'Tharaka-Nithi',
+    'Tharaka-Nithi': 'Tharaka-Nithi',  
+    'Muranga': 'Murang\'a',
+    'Murang\'a': 'Murang\'a'  
+}
+
+def standardize_county_names(df, column_name):
+    """
+    Standardize county names in the specified column of the DataFrame.
+    
+    Parameters:
+        df (pd.DataFrame): Input DataFrame
+        column_name (str): Name of the column containing county names
+    Returns:
+        pd.DataFrame: DataFrame with standardized county names
+    """
+    if column_name not in df.columns:
+        print(f"Warning: Column '{column_name}' not found in DataFrame")
+        return df
+    df[column_name] = df[column_name].replace(county_name_mapping)
+    return df
+
+allSurve = standardize_county_names(allSurve, 'county')
+county_shapefile = standardize_county_names(shapefile, 'county')
+subcounty_shapefile = standardize_county_names(sub_shapefile, 'county')
+ward_shapefile = standardize_county_names(ward_shapefile, 'county')
+
+""" Convert to json """
+shapefile_json = json.loads(shapefile.to_json())
+sub_shapefile_json = json.loads(sub_shapefile.to_json())
 ward_shapefile_json = json.loads(ward_shapefile.to_json())
 
+"""Publication dictionary"""
+CATEGORY_TITLES = {
+    'animal-data': 'Animal Health Data',
+    'policies-reports': 'Policies, Reports and Publications',
+    'population-data': 'Population Data',
+    'disease-syndromic': 'Specific Disease/Syndromic Data',
+    'health-facility': 'Health Facility Data'
+}
 
-# debug 
-#county
-print(shapefile.columns)
-print(shapefile['county'].unique())
+CATEGORY_DESCRIPTIONS = {
+    'animal-data':'Contains of animals health data, policies and legal documents in Kenya',
+    'policies-reports': 'Contains documents with health related data across several topics.',
+    'population-data': 'Composed of health data from communities and individuals in geographical areas or administrative boundaries.',
+    'disease-syndromic': 'Contains data related to a specific disease or syndrome',
+    'health-facility': 'Lists all the public health facilities in a country. Includes location, contact information and type.'
+}
 
-#subcounty
-print(sub_shapefile.columns)
-print(sub_shapefile['sub_county'].unique())
-
-#ward
-print(ward_shapefile.columns)
-print(ward_shapefile['Ward'].unique())
-
-print(allSurve.head())
-print(allSurve['county'].unique())
-
-print(allPopulation.head())
-print(allPopulation['Species'].unique())
-
-
-# Diseases info dictionary
+"""
+About page info for priority diseases
+"""
 disease_info = {
     'asf': """
 ### African Swine Fever
@@ -564,10 +720,16 @@ General: https://www.woah.org/en/disease/anthrax/ | Kenya: https://www.nature.co
 """
 }
 
+"""
+HOME PAGE :BASE PAGE
+"""
 @app.route('/')
 def index():
     return render_template('index.html')
 
+"""
+NATIONAL UPDATES : AT A GLANCE
+"""
 @app.route('/updates')
 def updates():
     """
@@ -577,6 +739,103 @@ def updates():
     years = sorted(allSurve['Report_Date'].dt.strftime('%Y').unique())
     return render_template('updates.html', years=years)
 
+"""
+CRAETE ACCOUT
+"""
+@app.route('/create-account', methods=['GET', 'POST'])
+def create_account():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        email = request.form.get('email')
+        workstation = request.form.get('workstation')
+        contact_number = request.form.get('contact_number')
+        password = request.form.get('password')
+
+        # Validate the fields
+        if not all([username, email, workstation, contact_number, password]):
+            flash('Please fill in all fields', 'error')
+            return redirect(url_for('create_account'))
+
+        # Validate username (must contain first and last name, i.e., two words)
+        if not re.match(r'^[A-Za-z]+ [A-Za-z]+$', username):
+            flash('Username must contain both first and last name', 'error')
+            return redirect(url_for('create_account'))
+
+        # Validate email (must contain @)
+        if '@' not in email:
+            flash('Email must contain an @ symbol', 'error')
+            return redirect(url_for('create_account'))
+
+        # Validate phone number (exactly 10 digits)
+        if not re.match(r'^\d{10}$', contact_number):
+            flash('Phone number must be exactly 10 digits', 'error')
+            return redirect(url_for('create_account'))
+
+        # Validate password (4-10 characters)
+        if not 4 <= len(password) <= 10:
+            flash('Password must be between 4 and 10 characters', 'error')
+            return redirect(url_for('create_account'))
+
+        # Check if user exists
+        if User.query.filter_by(email=email).first() or User.query.filter_by(username=username).first():
+            flash('Username or Email already exists', 'error')
+            return redirect(url_for('create_account'))
+
+        # Create new user
+        hashed_password = generate_password_hash(password, method='pbkdf2:sha256')
+        new_user = User(
+            username=username,
+            email=email,
+            workstation=workstation,
+            contact_number=contact_number,
+            password=hashed_password
+        )
+        db.session.add(new_user)
+        db.session.commit()
+        flash('Account created successfully! Please login', 'success')
+        return redirect(url_for('login'))
+
+    return render_template('createAccount.html')
+
+"""
+LOGIN ROUTE
+"""   
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        password = request.form.get('password')
+
+        user = User.query.filter_by(email=email).first()
+        if user and check_password_hash(user.password, password):
+            flask_session['user_id']=user.id
+            flask_session['workstation']=user.workstation
+            flask_session.modified = True 
+            print("Session after login:", flask_session)
+            flash('Login successful!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid email or password', 'error')
+            return redirect(url_for('login'))
+    return render_template('login.html')
+
+"""
+LOGOUT ROUTE
+"""
+@app.route('/logout')
+def logout():
+    if 'user_id' not in flask_session:
+        flash('You are not logged in', 'error')
+        return redirect(url_for('login'))
+    
+    flask_session.clear()
+    flash('You have been logged out', 'success')
+    return redirect(url_for('index'))
+
+"""
+KPI'S TO COMPUTE THE DIFFERENT METRICS (months, years, diseases)
+"""
+""" UPDATES CALCULATIONS """
 @app.route('/get_months', methods=['POST'])
 def get_months():
     year = request.form['year']
@@ -657,9 +916,7 @@ def get_kpi_data():
         'total_at_risk': total_at_risk
     })
 
-"""
-National surveillance Routes 
-"""
+""" NATIONAL OVERVIEW CALCULATIONS """
 @app.route('/get_national_init', methods=['GET'])
 def get_national_init():
     diseases = sorted(allSurve['Disease_Condition'].dropna().unique())
@@ -728,22 +985,89 @@ def get_county_map_data():
         'shapefile': subcounty_shapefile_json
     })
 
+@app.route('/get_trend_data', methods=['POST'])
+def get_trend_data():
+    disease = request.form['disease']
+    period = request.form['period']
+    
+    # Define time period filters
+    today = datetime.now()
+    period_filters = {
+        'all': None,
+        '3m': today - timedelta(days=90),
+        '6m': today - timedelta(days=180),
+        '9m': today - timedelta(days=270),
+        '1y': today - timedelta(days=365),
+        '2y': today - timedelta(days=730)
+    }
+    
+    # Filter data
+    df = allSurve[allSurve['Disease_Condition'] == disease]
+    if period != 'all' and period_filters[period]:
+        df = df[df['Report_Date'] >= period_filters[period]]
+    
+    # Group by species and date
+    grouped = df.groupby(['Species_Affected', pd.Grouper(key='Report_Date', freq='ME')])['Number_Sick'].sum().reset_index()
+    
+    # Create series for each species
+    series = []
+    for species in grouped['Species_Affected'].unique():
+        species_data = grouped[grouped['Species_Affected'] == species]
+        series.append({
+            'name': species,
+            'data': species_data[['Report_Date', 'Number_Sick']].rename(columns={'Report_Date': 'date', 'Number_Sick': 'value'}).to_dict(orient='records')
+        })
+    
+    return jsonify({'series': series})
+
+"""
+ANIMAL SURVEILLANCE( Nationsl, County and Animal Population)
+"""
 @app.route('/animal-surveillance/<section>')
 def animal_surveillance(section):
     valid_sections = ['national', 'county', 'disease','population']
+    """ National tab """
     if section not in valid_sections:
         section = 'national'
+
+    #""" Authenticate user """
+    #if 'user_id' not in flask_session:
+    #    flash('Please Register or Login to access this page', 'error')
+    #    return redirect(url_for('login'))
+    
+    #""" Restrict access to nation Overview for county users"""
+    #if section == 'national' and flask_session.get('workstation') == 'County':
+    #    flash('Access to the National overview is restricted to National Admins only', 'error')
+    #    return redirect(url_for('animal_surveillance', section='county'))
+    
+    """ Population tab """
     if section == 'population':
         species = sorted(allPopulation['Species'].unique())
         return render_template('animal_surveillance.html', section=section, species=species)
+    
+    """ County tab """
     if section == 'county':
         counties = sorted(allSurve['county'].unique())
         diseases = sorted(allSurve['Disease_Condition'].dropna().unique())
         return render_template('animal_surveillance.html', section=section, counties=counties, diseases=diseases)
+    
+    """ Disease tab"""
+    if section == 'disease':
+        counties = sorted(moving_average['county'].unique())
+        diseases = sorted(moving_average['Disease_Condition'].dropna().unique())
+        years = sorted(moving_average['year'].unique().astype(str))
+        return render_template('animal_surveillance.html', section=section, counties=counties, diseases=diseases, years=['all'] + years)
     return render_template('animal_surveillance.html', section=section)
 
+""" HELPER FUNCTION TO CHECK LOGIN STATUS FOR TEMPLATES """
 """
-County statistics
+@app.context_processor
+def inject_user():
+    return dict(
+        is_logged_in='user_id' in flask_session,
+        current_user=flask_session.get('username'),
+        user_workstation=flask_session.get('workstation')
+    )
 """
 @app.route('/get_county_surveillance_data', methods=['POST'])
 def get_county_surveillance_data():
@@ -982,10 +1306,513 @@ def get_disease_visuals(disease):
         'about_text': about_text
     })
 
+"""
+DISEASES THRESHOLD 
+"""
+@app.route('/get_disease_threshold_data', methods=['POST'])
+def get_disease_threshold_data():
+    thresh_year = request.form.get('thresh_year', 'all')
+    thresh_county = request.form.get('thresh_county', 'all')
+    thresh_disease = request.form.get('thresh_disease', 'all')
+    static_disease = request.form.get('static_disease')
+    static_county = request.form.getlist('static_county')  # Multiple counties
+    static_year = request.form.get('static_year')
+    rolling_disease = request.form.get('rolling_disease')
+    rolling_county = request.form.getlist('rolling_county')  # Multiple counties
+    national_disease = request.form.get('national_disease')
+
+    # Threshold data (for KPIs and table)
+    thresh_data = moving_average.copy()
+    if thresh_year != 'all':
+        thresh_data = thresh_data[thresh_data['year'] == int(thresh_year)]
+    if thresh_county != 'all':
+        thresh_data = thresh_data[thresh_data['county'] == thresh_county]
+    if thresh_disease != 'all':
+        thresh_data = thresh_data[thresh_data['Disease_Condition'] == thresh_disease]
+
+    # Debug thresh_data
+    print("thresh_data shape:", thresh_data.shape)
+    print("thresh_data sample:", thresh_data.head(2).to_dict(orient='records'))
+
+    # KPIs
+    total_counties = thresh_data['county'].nunique()
+    active_alerts = len(thresh_data[thresh_data['Number_Sick'] >= thresh_data['Alert']])
+    outbreaks = len(thresh_data[thresh_data['Number_Sick'] >= thresh_data['Outbreak']])
+    diseases_monitored = thresh_data['Disease_Condition'].nunique()
+
+    # Table data
+    table_data = moving_average[['county', 'Disease_Condition', 'Number_Sick', 'Alert', 'Outbreak', 'year']].copy()
+    if thresh_year != 'all':
+        table_data = table_data[table_data['year'] == int(thresh_year)]
+    table_data = table_data.groupby(['county', 'Disease_Condition']).agg({
+        'Number_Sick': 'sum',
+        'Alert': lambda x: round(x.max(), 2) if x.notna().any() else np.nan,
+        'Outbreak': lambda x: round(x.max(), 2) if x.notna().any() else np.nan
+    }).reset_index()
+    table_data = table_data.rename(columns={'Number_Sick': 'Total_cases'})
+    table_data['Exceeded_Alert'] = table_data.apply(
+        lambda row: 'Outbreak' if pd.notna(row['Outbreak']) and row['Total_cases'] > row['Outbreak']
+        else 'Alert' if pd.notna(row['Alert']) and row['Total_cases'] > row['Alert']
+        else 'Normal', axis=1
+    )
+    table_data = table_data.sort_values('Total_cases', ascending=False).head(20)
+
+    # remove all NaN values
+    table_data = table_data.replace({np.nan: None})
+
+    # Alert status chart data
+    chart_data = moving_average.copy()
+    if thresh_year != 'all':
+        chart_data = chart_data[chart_data['year'] == int(thresh_year)]
+    if thresh_disease != 'all':
+        chart_data = chart_data[chart_data['Disease_Condition'] == thresh_disease]
+    status_data = chart_data.assign(
+        status=lambda x: np.where(x['Number_Sick'] >= x['Outbreak'], 'Outbreak',
+                                  np.where(x['Number_Sick'] >= x['Alert'], 'Alert', 'Normal'))
+    ).groupby(['county', 'status'])['Number_Sick'].sum().unstack(fill_value=0).reset_index()
+    status_data = status_data.sort_values(by=['Outbreak', 'Alert', 'Normal'], ascending=False)
+    # remove all NaN values
+    status_data = status_data.replace({np.nan: None})
+
+    ## Static threshold data processing
+    static_data = disease_threshold.copy()
+    if static_disease and static_year and static_county and len(static_county) > 0:
+        static_data = static_data[static_data['disease'] == static_disease]
+        if len(static_data) == 0:
+            print(f"DEBUG: No data found for disease '{static_disease}'")
+        else:
+            # Filter by year
+            year_int = int(static_year)
+            static_data = static_data[static_data['year'] == year_int]
+            print(f"DEBUG: After year filter ({year_int}): {len(static_data)} rows")
+            
+            if len(static_data) == 0:
+                print(f"DEBUG: No data found for year {year_int}")
+            else:
+                # Filter by counties
+                static_data = static_data[static_data['county'].isin(static_county)]
+                print(f"DEBUG: After county filter ({static_county}): {len(static_data)} rows")
+                
+                if len(static_data) == 0:
+                    print(f"DEBUG: No data found for counties {static_county}")
+                    print(f"DEBUG: Available counties for {static_disease} in {year_int}: {sorted(static_data['county'].unique()) if len(static_data) > 0 else 'None'}")
+
+        if not static_data.empty:
+            static_data['date'] = pd.to_datetime(static_data['date'], errors='coerce')
+            null_values = static_data['value'].isna().sum()
+            if null_values < len(static_data): 
+                static_data = static_data.dropna(subset=['value', 'date'], how='all')
+                if not static_data.empty:
+                    """Calculate mean, std, alert, and outbreak thresholds for a county group"""
+                    def calculate_county_thresholds(group):
+                        group = group.copy()
+                        # Calculate statistics
+                        mean_val = group['value'].mean()
+                        sd_val = group['value'].std()
+                        if pd.isna(sd_val) or sd_val == 0:
+                            sd_val = 0.1  
+                        # Apply thresholds to all rows in the group
+                        group['mean'] = mean_val
+                        group['sd'] = sd_val
+                        group['alert'] = mean_val + sd_val * 1
+                        group['outbreak'] = mean_val + sd_val * 2
+                        
+                        return group
+                    
+                    try:
+                        static_data = static_data.groupby('county', group_keys=False).apply(
+                            calculate_county_thresholds
+                        ).reset_index(drop=True)
+                        static_data = static_data.dropna(subset=['date'])
+                        static_data = static_data.sort_values(['county', 'date']).reset_index(drop=True)
+                        
+                    except Exception as e:
+                        print(f"DEBUG: Error in groupby calculations: {e}")
+                        static_data = pd.DataFrame(columns=['county', 'date', 'value', 'mean', 'sd', 'alert', 'outbreak'])
+                else:
+                    print("DEBUG: No data remaining after null filtering")
+                    static_data = pd.DataFrame(columns=['county', 'date', 'value', 'mean', 'sd', 'alert', 'outbreak'])
+            else:
+                print("DEBUG: All values are null")
+                static_data = pd.DataFrame(columns=['county', 'date', 'value', 'mean', 'sd', 'alert', 'outbreak'])
+        else:
+            print("DEBUG: No data after filtering - creating empty DataFrame")
+            static_data = pd.DataFrame(columns=['county', 'date', 'value', 'mean', 'sd', 'alert', 'outbreak'])
+    else:
+        static_data = pd.DataFrame(columns=['county', 'date', 'value', 'mean', 'sd', 'alert', 'outbreak'])
+
+    # Replace NaN with None for JSON serialization
+    static_data = static_data.replace({np.nan: None})
+
+    # Rolling threshold data processing
+    rolling_data = moving_average[[
+        'county', 'Disease_Condition', 'year', 'month', 'Date', 'Number_Sick', 'monthly_ma', 'Alert', 'Outbreak'
+    ]].copy()
+
+    if rolling_disease and rolling_county:
+        try:
+            # First filter by disease and county
+            rolling_data = rolling_data[
+                (rolling_data['Disease_Condition'] == rolling_disease) &
+                (rolling_data['county'].isin(rolling_county))
+            ]
+            print(f"Rolling data after disease/county filter: {len(rolling_data)} rows")
+            rolling_data = rolling_data.dropna(subset=['Number_Sick', 'month'], how='all')
+            print(f"Rolling data after null filter: {len(rolling_data)} rows")
+            if not rolling_data.empty:
+                # Map months
+                month_mapping = {
+                    'January': 'Jan', 'February': 'Feb', 'March': 'Mar', 'April': 'Apr',
+                    'May': 'May', 'June': 'Jun', 'July': 'Jul', 'August': 'Aug',
+                    'September': 'Sep', 'October': 'Oct', 'November': 'Nov', 'December': 'Dec',
+                    1: 'Jan', 2: 'Feb', 3: 'Mar', 4: 'Apr', 5: 'May', 6: 'Jun',
+                    7: 'Jul', 8: 'Aug', 9: 'Sep', 10: 'Oct', 11: 'Nov', 12: 'Dec'
+                }
+                
+                rolling_data['month'] = rolling_data['month'].map(month_mapping).fillna(rolling_data['month'])
+                rolling_data = rolling_data.sort_values('Date')
+                
+            print(f"Final rolling data: {len(rolling_data)} rows")
+            print("Sample rolling data:", rolling_data.head(2).to_dict(orient='records') if not rolling_data.empty else "Empty")
+            
+        except KeyError as e:
+            print(f"KeyError in rolling_data filtering: {e}")
+            print("Available columns:", rolling_data.columns.tolist())
+            rolling_data = pd.DataFrame(columns=['county', 'Disease_Condition', 'year', 'month', 'Date', 'Number_Sick', 'monthly_ma', 'Alert', 'Outbreak'])
+    else:
+        print("No rolling_disease or rolling_county provided, returning empty rolling_data")
+        rolling_data = pd.DataFrame(columns=['county', 'Disease_Condition', 'year', 'month', 'Date', 'Number_Sick', 'monthly_ma', 'Alert', 'Outbreak'])
+
+    # Replace NaN with None
+    rolling_data = rolling_data.replace({np.nan: None})
+
+    # Static data grouping
+    static_data_grouped = {}
+    if not static_data.empty and 'county' in static_data.columns:
+        try:
+            unique_counties = static_data['county'].unique()
+            print(f"DEBUG: Grouping data for counties: {unique_counties}")
+            
+            for county in unique_counties:
+                county_data = static_data[static_data['county'] == county].copy()
+                
+                if not county_data.empty:
+                    county_data = county_data.sort_values('date')
+                    static_data_grouped[county] = {
+                        'county': county,
+                        'dates': county_data['date'].dt.strftime('%b %Y').tolist() if county_data['date'].notna().any() else [],
+                        'values': county_data['value'].tolist(),
+                        'mean': county_data['mean'].tolist(),
+                        'alert': county_data['alert'].tolist(),
+                        'outbreak': county_data['outbreak'].tolist()
+                    }
+        except Exception as e:
+            print(f"DEBUG: Error in static_data grouping: {e}")
+            import traceback
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+            static_data_grouped = {}
+    else:
+        print("DEBUG: Cannot group static_data - either empty or missing 'county' column")
+        if static_data.empty:
+            print("DEBUG: static_data is empty")
+        elif 'county' not in static_data.columns:
+            print(f"DEBUG: 'county' not in columns: {static_data.columns.tolist()}")
+
+    print(f"DEBUG: Final static_data_grouped has {len(static_data_grouped)} counties")
+
+    # Rolling data grouping 
+    rolling_data_grouped = {}
+    if not rolling_data.empty and 'county' in rolling_data.columns:
+        try:
+            for county in rolling_data['county'].unique():
+                county_data = rolling_data[rolling_data['county'] == county]
+                if not county_data.empty:
+                    rolling_data_grouped[county] = {
+                        'county': county,
+                        'years': county_data['year'].astype(str).tolist(),
+                        'months': county_data['month'].tolist(),
+                        'number_sick': county_data['Number_Sick'].tolist(),
+                        'monthly_ma': county_data['monthly_ma'].tolist(),
+                        'alert': county_data['Alert'].tolist(),
+                        'outbreak': county_data['Outbreak'].tolist()
+                    }
+            print(f"Rolling data grouped for {len(rolling_data_grouped)} counties")
+        except Exception as e:
+            print(f"Error in rolling_data grouping: {e}")
+            rolling_data_grouped = {}
+
+    # National threshold data
+    national_data = disease_threshold.copy()
+    if national_disease:
+        national_data = national_data[national_data['disease'] == national_disease]
+        national_data['date'] = pd.to_datetime(national_data['date'], errors='coerce')
+        national_data = national_data.groupby('date')['value'].mean().reset_index().sort_values('date')
+        if not national_data.empty:
+            national_data['moving_average'] = national_data['value'].rolling(window=5, min_periods=1).mean()
+            national_data['moving_average'] = national_data['moving_average'].ffill()
+            national_data['mean'] = national_data['value'].mean()
+            national_data['sd'] = national_data['value'].std()
+            national_data['alert'] = national_data['mean'] + national_data['sd'] * 1
+            national_data['outbreak'] = national_data['mean'] + national_data['sd'] * 2
+        else:
+            national_data = pd.DataFrame(columns=['date', 'value', 'moving_average', 'mean', 'sd', 'alert', 'outbreak'])
+    else:
+        national_data = pd.DataFrame(columns=['date', 'value', 'moving_average', 'mean', 'sd', 'alert', 'outbreak'])
+        # remove all NaN values
+    national_data = national_data.replace({np.nan: None})
+
+    print(f"Disease threshold data for year={thresh_year}, county={thresh_county}, disease={thresh_disease}:", {
+        'total_counties': total_counties,
+        'active_alerts': active_alerts,
+        'outbreaks': outbreaks,
+        'diseases_monitored': diseases_monitored,
+        'table_data': table_data.to_dict(orient='records')[:1],
+        'status_data': status_data.to_dict(orient='records')[:1],
+        'static_data': static_data.to_dict(orient='records')[:1],
+        'rolling_data': rolling_data.to_dict(orient='records')[:1],
+        'national_data': national_data.to_dict(orient='records')[:1]
+    })
+
+    return jsonify({
+    'total_counties': total_counties,
+    'active_alerts': active_alerts,
+    'outbreaks': outbreaks,
+    'diseases_monitored': diseases_monitored,
+    'table_data': table_data.to_dict(orient='records'),
+    'status_data': {
+        'counties': status_data['county'].tolist(),
+        'normal': status_data.get('Normal', [0] * len(status_data)).tolist(),
+        'alert': status_data.get('Alert', [0] * len(status_data)).tolist(),
+        'outbreak': status_data.get('Outbreak', [0] * len(status_data)).tolist()
+    },
+    'static_data': static_data_grouped,
+    'rolling_data': rolling_data_grouped,
+    'national_data': {
+        'dates': national_data['date'].dt.strftime('%Y-%m').tolist() if not national_data['date'].isna().all() else [],
+        'values': national_data['value'].tolist(),
+        'moving_average': national_data['moving_average'].tolist(),
+        'alert': national_data['alert'].tolist(),
+        'outbreak': national_data['outbreak'].tolist()
+    }
+})
+
+"""
+VACCINE COVERAGE
+"""
 @app.route('/vaccine-coverage')
 def vaccine_coverage():
     return render_template('vaccine_coverage.html')
 
+"""
+SECTION TO UPLOAD POLICIES 
+"""
+"""
+SFTP configuration 
+"""
+# sftp download to contabo
+def sftp_policy_upload(file, filename):
+    try:
+        transport = paramiko.Transport((app.config['CONTABO_HOST'], 22))
+        transport.connect(username=app.config['CONTABO_USER'], password=app.config['CONTABO_PASSWORD'])
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        remote_path = os.path.join(app.config['UPLOAD_POLICIES'], filename)
+        file.save(filename)  # Save temporarily locally
+        sftp.put(filename, remote_path)
+        os.remove(filename)  # Clean up
+        sftp.close()
+        transport.close()
+    except Exception as e:
+        raise Exception(f"SFTP upload failed: {str(e)}")
+
+# sftp download to contabo
+def sftp_policy_download(filename):
+    try:
+        transport = paramiko.Transport((app.config['CONTABO_HOST'], 22))
+        transport.connect(username=app.config['CONTABO_USER'], password=app.config['CONTABO_PASSWORD'])
+        sftp = paramiko.SFTPClient.from_transport(transport)
+        remote_path = os.path.join(app.config['UPLOAD_POLICIES'], filename)
+        filepath = filename
+        sftp.get(remote_path, filepath)
+        sftp.close()
+        transport.close()
+        return filepath
+    except Exception as e:
+        raise Exception(f"SFTP download failed: {str(e)}")
+
+"""
+UPLOAD POLICY FILES
+"""
+@app.route('/upload_policy', methods=['GET', 'POST'])
+def upload_policy():
+    try:
+        if request.method == 'POST':
+            if 'file' not in request.files:
+                flash('No file provided!', 'error')
+                return redirect(url_for('upload_policy'))
+            
+            file = request.files['file']
+            category = request.form.get('category')
+            data_access = request.form.get('data_access').title()
+            description = request.form.get('description')
+            keywords = request.form.get('keywords')
+            data_type = request.form.get('data_type')
+
+            if not file.filename:
+                flash('No file selected!', 'error')
+                return redirect(url_for('upload_policy'))
+
+            if not all([file, category, data_access, description, data_type]):
+                flash('File, category, data access, description, and data type are required!', 'error')
+                return redirect(url_for('upload_policy'))
+
+            if not file.filename.rsplit('.', 1)[1].lower() in app.config['POLICY_EXTENSIONS']:
+                flash('Only PDF, PNG, DOC, DOCX, DOCM files are allowed!', 'error')
+                return redirect(url_for('upload_policy'))
+            
+            valid_categories = list(CATEGORY_TITLES.values())
+            if category not in valid_categories:
+                flash(f'Invalid category. Choose from: {", ".join(valid_categories)}', 'error')
+                return redirect(url_for('upload_policy'))
+            
+            if data_access not in ['Public', 'Private']:
+                flash('Invalid data access type!', 'error')
+                return redirect(url_for('upload_policy'))
+
+            # Save file with timestamp prefix
+            filename = secure_filename(file.filename)
+            sftp_policy_upload(file, filename)
+
+            # Save file in database
+            policy = Policy(
+                filename=filename,
+                category=category,
+                description=description,
+                keywords=keywords,
+                data_type=data_type,
+                data_access=data_access
+            )
+            session.add(policy)
+            session.commit()
+            flash('Policy file uploaded successfully!', 'success')
+            return redirect(url_for('policy'))
+        return render_template('upload_policy.html', category_titles=CATEGORY_TITLES)
+    except Exception as e:
+        session.rollback()
+        logger.error(f"Error uploading policy: {str(e)}")
+        flash(f"Error uploading policy: {str(e)}", 'error')
+        return redirect(url_for('upload_policy'))
+    finally:
+        session.close()
+
+"""
+DISPLAY POLICY FILES
+"""
+@app.route('/policy', methods=['GET'])
+def policy():
+    try:
+        policies = session.query(Policy).all()
+        policy_list = [{
+            'id': p.id,
+            'filename': p.filename,
+            'category': p.category,
+            'description': p.description,
+            'keywords': p.keywords,
+            'data_type': p.data_type,
+            'data_access': p.data_access,
+            'upload_timestamp': p.upload_timestamp
+        } for p in policies]
+        return render_template('policy.html',
+                               policy=policy_list,
+                               category_titles=CATEGORY_TITLES,
+                               category_descriptions=CATEGORY_DESCRIPTIONS)
+    except Exception as e:
+        logger.error(f"Error fetching policies: {str(e)}")
+        return render_template('policy.html',
+                               policy=[],
+                               category_titles={},
+                               category_descriptions={},
+                               error="Failed to load policies")
+    finally:
+        session.close()
+
+"""
+VIEW POLICY FILES
+"""
+@app.route('/view_policy/<filename>')
+def view_policy(filename):
+    try:
+        policy = session.query(Policy).filter_by(filename=filename).first()
+        if not policy:
+            flash('File not found', 'error')
+            return redirect(url_for('policies'))
+        
+        if policy.data_access == 'Private':
+            flash('Login required for private file', 'error')
+            return redirect(url_for('policies'))
+
+        filepath = sftp_policy_download(filename)
+        mime_type = 'application/pdf' if filename.lower().endswith('.pdf') else 'application/octet-stream'
+        response = send_file(filepath, mimetype=mime_type, as_attachment=False)
+        os.remove(filepath)
+        return response
+    except Exception as e:
+        logger.error(f"Error viewing policy: {str(e)}")
+        flash(f"Error viewing policy: {str(e)}", 'error')
+        return redirect(url_for('policies'))
+    finally:
+        session.close()
+
+"""
+DOWNLOAD POLICY FILES
+"""
+@app.route('/download_policy/<filename>')
+def download_policy(filename):
+    session = Session()
+    try:
+        policy = session.query(Policy).filter_by(filename=filename).first()
+        if not policy:
+            flash('File not found', 'error')
+            return redirect(url_for('policy'))
+        
+        if policy.data_access == 'Private':
+            flash('Request file', 'error')
+            return redirect(url_for('policy'))
+
+        filepath = sftp_policy_download(filename)
+        extension = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+        mime_types = {
+            'pdf': 'application/pdf',
+            'png': 'image/png',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'docm': 'application/vnd.ms-word.document.macroEnabled.12'
+        }
+        mime_type = mime_types.get(extension, 'application/octet-stream')
+
+        response = send_file(
+            filepath,
+            mimetype=mime_type,
+            as_attachment=True,
+            download_name=filename
+        )
+        os.remove(filepath)  # Clean up the temporary file
+        return response
+    except Exception as e:
+        logger.error(f"Error downloading policy: {str(e)}")
+        flash(f"Error downloading policy: {str(e)}", 'error')
+        return redirect(url_for('policy'))
+    finally:
+        session.close()
+
+"""
+Standardise the policy names
+"""
+@app.template_filter('format_policy')
+def format_policy(filename):
+    name_without_ext = filename.rsplit('.', 1)[0] if '.' in filename else filename
+    name_with_spaces = name_without_ext.replace('_', ' ')
+    sentence_case = name_with_spaces.capitalize()
+    return sentence_case  
 
 if __name__ == '__main__':
     app.run(debug=True)

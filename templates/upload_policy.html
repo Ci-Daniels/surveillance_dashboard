@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Resources</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!--Icon logo-->
+    <link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='img/vet-logo.png') }}">
+    <link rel="shortcut icon" type="image/png" href="{{ url_for('static', filename='img/vet-logo.png') }}">
+    <link rel="icon" type="image/png" sizes="16x16"  href="{{ url_for('static', filename='img/vet-logo.png') }}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='img/vet-logo.png') }}">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #27aae1 0%, #27aae1 100%); min-height: 100vh; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .header { text-align: center; margin-bottom: 40px; color: white; }
+        .header h1 { font-size: 2.5rem; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+        .nav-tabs { display: flex; justify-content: center; margin-bottom: 30px; background: rgba(255,255,255,0.1); border-radius: 15px; padding: 10px; backdrop-filter: blur(10px); }
+        .nav-tab { padding: 12px 24px; margin: 0 5px; background: transparent; border: none; color: white; cursor: pointer; border-radius: 10px; font-weight: 600; transition: all 0.3s ease; }
+        .nav-tab:hover { background: rgba(255,255,255,0.2); transform: translateY(-2px); }
+        .nav-tab.active { background: rgba(255,255,255,0.3); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .content-section { display: none; animation: fadeIn 0.5s ease-in; }
+        .content-section.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .admin-panel { background: rgba(255,255,255,0.95); padding: 30px; border-radius: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.1); backdrop-filter: blur(10px); }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .form-group { margin-bottom: 20px; }
+        .form-group.full-width { grid-column: span 2; }
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: #4a5568; }
+        input, select, textarea { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 10px; font-size: 16px; transition: all 0.3s ease; background: white; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #667eea; box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1); transform: translateY(-1px); }
+        textarea { min-height: 100px; resize: vertical; }
+        .btn { padding: 12px 24px; border: none; border-radius: 10px; font-size: 16px; font-weight: 600; cursor: pointer; transition: all 0.3s ease; text-transform: uppercase; letter-spacing: 1px; }
+        .btn-primary { background: #006D77; color: white; }
+        .btn-primary:hover { background: #CB5F01; transform: translateY(-2px); box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        .success-message { background: #c6f6d5; color: #22543d; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: none; }
+        @media (max-width: 768px) { .form-grid { grid-template-columns: 1fr; } .form-group.full-width { grid-column: span 1; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>DVS Data management</h1>
+            <p>Comprehensive platform for managing animal health data resources</p>
+        </div>
+
+        <div class="nav-tabs">
+            <button class="nav-tab active">Upload Resources</button>
+        </div>
+       
+        <div id = "admin" class="content-section active">
+            <div class="admin-panel">
+                <div class="success-message" id="successMessage">
+                    Policy added successfully!
+                </div>
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                    {% for category, message in messages %}
+                        <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                    {% endfor %}
+                {% endif %}
+                {% endwith %}
+                <form id="policyForm" method="POST" enctype="multipart/form-data">
+                    <div class="form-grid">
+                        <!-- Select category -->
+                        <div class="form-group">
+                            <label for="category">Category *</label>
+                            <select class="form-select" id="category" name="category" required>
+                                <option value="" disabled selected>Select a category</option>
+                                {% for key, value in category_titles.items() %}
+                                    <option value="{{ value }}">{{ value }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Select data access -->
+                        <div class="form-group">
+                            <label for="data_type">Data Type</label>
+                            <select class="form-select" id="data_type" name="data_type" required>
+                                <option value="" disabled selected>Select data type</option>
+                                <option value="Policy">Policy</option>
+                                <option value="Report">Report</option>
+                                <option value="Document">Document</option>
+                            </select>
+                        </div>
+                    </div>
+                         <!-- Choose file -->
+                         <div class="form-group">
+                            <label for="file">Choose File</label>
+                            <input type="file" class="form-control" id="file" name="file" accept=".pdf,.png,.doc,.docx,.docm" required>
+                        </div>
+
+                        <!-- Add description -->
+                        <div class="form-group">
+                            <label for="description">Description</label>
+                            <textarea class="form-control" id="description" name="description" rows="4" maxlength="500" required placeholder="Describe the policy document (max 500 characters)"></textarea>
+                        </div>
+
+                    <div class="form-grid">
+                         <!-- Select data access -->
+                         <div class="form-group">
+                            <label for="data_access">Access Level</label>
+                            <select class="form-select" id="data_access" name="data_access" required>
+                                <option value="" disabled selected>Select access level</option>
+                                <option value="Public">Public</option>
+                                <option value="Private">Private</option>
+                            </select>
+                        </div>
+
+                        <!-- Add keywords -->
+                        <div class="form-group">
+                            <label for="keywords">Keywords</label>
+                            <input type="text" class="form-control" id="keywords" name="keywords" required placeholder="Enter keywords (comma-separated)" maxlength="200">
+                        </div>
+                    </div>
+                        <button type="submit" class="btn btn-primary">Upload File</button>
+                </form>
+            </div>
+        </div>
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Control the upload sections -->
+    <script>
+        document.querySelectorAll('[data-url]').forEach(button => {
+            button.addEventListener('click', function() {
+                window.location.href = this.dataset.url;
+            });
+        });
+    </script>
+
+</body>
+</html>

@@ -28,8 +28,10 @@
 </head>
 <body>
     <nav class="navbar">
-        <img src="/static/img/vet-logo.png" alt="Logo" class="logo-icon">
-        <div class="logo">Animal Surveillance Dashboard</div>
+            <div class="navbar-brand">
+                <img src="/static/img/vet-logo.png" alt="Logo" class="logo-icon">
+                <button class="hamburger" aria-label="Toggle menu">☰</button>
+            </div>
         <ul class="nav-links">
             <li><a href="/" class="active">Home</a></li>
             <li><a href="/#about">About</a></li>
@@ -61,6 +63,15 @@
                 </div>
             </li>
             <li><a href="/vaccine-coverage">Vaccine Coverage</a></li>
+            <li><a href="{{ url_for('policy')}}">Publications</a></li>
+            <li><a href="{{ url_for('upload_policy') }}">Upload Resources</a></li>
+            <!--
+            {% if 'user_id' in flask_session %}
+            <li><a href="{{ url_for('logout') }}">Logout</a></li>
+            {% else %}
+                <li><a href="{{ url_for('login') }}">Login</a></li>
+            {% endif %}
+            -->
         </ul>
     </nav>
 
@@ -109,7 +120,7 @@
                 <div class="card">
                     <div class="card-icon warning"><i class="fas fa-cogs"></i></div>
                     <h3>Key Features</h3>
-                    <p>The dashboard integrates multiple data sources to provide a unified view of animal health across the country, with special focus on high-risk areas and emerging health threats.</p>
+                    <p>The dashboard integrates animal health passive surveillance data to provide a unified view of animal health across the country, with special focus on high-risk areas and emerging health threats.</p>
                 </div>
             </div> 
         </section>
@@ -126,7 +137,6 @@
                 <h3>Resources</h3>
                 <a href="#home">Home</a>
                 <a href="#about">About</a>
-                <a href="#contact">Contact</a>
                 <a href="updates.html">Updates</a>
                 <a href="vaccine-coverage.html">Vaccine Coverage</a>
             </div>
@@ -134,7 +144,6 @@
                 <h3>Surveillance</h3>
                 <a href="surveillance.html#national">National Overview</a>
                 <a href="surveillance.html#county">County Surveillance</a>
-                <a href="surveillance.html#kajiado">Kajiado Focus</a>
                 <a href="surveillance.html#thresholds">Disease Thresholds</a>
                 <a href="surveillance.html#population">Animal Population</a>
             </div>
@@ -142,12 +151,16 @@
                 <h3>Contacts</h3>
                 <p>Department of Veterinary Services</p>
                 <li><span class="ion-ios-telephone"></span> (+254) 20 271 8870 </li>
-                <li><span class="ion-email"></span><a href="mailto:infodvs@kilimo.go.ke" className="hover:underline">infodvs@kilimo.go.ke</a></p></li>
+                <li><span class="ion-email"></span><a href="mailto:infodvs@kilimo.go.ke" className="hover:underline">infodvs@kilimo.go.ke</a></li>
             </div>
         </div>
         <div class="footer-bottom">
             <p>&copy; 2025 Animal Surveillance Dashboard - Department of Veterinary Services. All rights reserved.</p>
         </div>
     </footer>
+
+    
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

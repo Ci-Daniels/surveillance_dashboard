@@ -1,8 +1,10 @@
 document.addEventListener('DOMContentLoaded', function() {
+    const nationalTab = document.getElementById('national_tab');
     const diseaseSelect = document.getElementById('select_disease');
     const countySelect = document.getElementById('county_selector');
     const countyMapInstruction = document.getElementById('county-map-instruction');
     const countyMapContainer = document.getElementById('countymap');
+    const timePeriodCards = document.querySelectorAll('.time-period-card');
 
     // Verify jQuery and bootstrap-select
     if (!window.jQuery || !$.fn.selectpicker) {
@@ -20,15 +22,43 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Verify Highcharts Maps is loaded
+    // Toggle tab panes based on dropdown
+    function toggleTabs() {
+        const selectedTab = nationalTab.value;
+        document.querySelectorAll('.tab-pane').forEach(pane => {
+            pane.classList.toggle('active', pane.id === selectedTab);
+        });
+        // Update maps and trend when switching back to national tab
+        if (selectedTab === 'national') {
+            updateCounties();
+            updateTrendPlot();
+        }
+    }
+
+    // Initialize tab visibility
+    if (nationalTab) {
+        nationalTab.addEventListener('change', toggleTabs);
+        toggleTabs();
+    }
+
+    // Verify Highcharts and Highcharts Maps
     if (!Highcharts || !Highcharts.mapChart) {
-        console.error('Highcharts Maps module is not loaded.');
+        console.error('Highcharts or Highcharts Maps module is not loaded.');
         if (countyMapInstruction) {
             countyMapInstruction.textContent = 'Error: Map module not loaded.';
             countyMapInstruction.style.display = 'block';
         }
         return;
     }
+
+    // Handle time period selection
+    timePeriodCards.forEach(card => {
+        card.addEventListener('click', function() {
+            timePeriodCards.forEach(c => c.classList.remove('active'));
+            this.classList.add('active');
+            updateTrendPlot();
+        });
+    });
 
     // Fetch initial data (diseases)
     fetch('/get_national_init', {
@@ -50,6 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         updateCounties();
+        updateTrendPlot();
     })
     .catch(error => {
         console.error('Error fetching initial data:', error);
@@ -63,7 +94,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Update counties when disease changes
     if (diseaseSelect) {
-        diseaseSelect.addEventListener('change', updateCounties);
+        diseaseSelect.addEventListener('change', () => {
+            updateCounties();
+            updateTrendPlot();
+        });
     }
 
     // Update maps when county changes
@@ -236,6 +270,72 @@ document.addEventListener('DOMContentLoaded', function() {
             countyMapContainer.style.display = 'none';
         });
     }
+
+    function updateTrendPlot() {
+        if (!diseaseSelect?.value) return;
+
+        const selectedPeriod = document.querySelector('.time-period-card.active')?.dataset.period || 'all';
+
+        fetch('/get_trend_data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `disease=${encodeURIComponent(diseaseSelect.value)}&period=${encodeURIComponent(selectedPeriod)}`
+        })
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP error! Status: ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            console.log('Trend data:', data);
+            const trendPlot = document.getElementById('national_trend_plot');
+            if (!trendPlot) {
+                console.error('Trend plot container (national_trend_plot) not found in DOM.');
+                return;
+            }
+            if (!data.series || data.series.length === 0) {
+                trendPlot.innerHTML = '<p>No trend data available for this selection.</p>';
+                return;
+            }
+
+            Highcharts.chart('national_trend_plot', {
+                chart: { type: 'spline' },
+                title: { text: `Trend of ${diseaseSelect.value} Cases Over Time` },
+                xAxis: {
+                    type: 'datetime',
+                    title: { text: 'Date' },
+                    dateTimeLabelFormats: {
+                        month: '%b %Y',
+                        year: '%Y'
+                    }
+                },
+                yAxis: {
+                    title: { text: 'Number Sick' },
+                    min: 0
+                },
+                series: data.series.map(series => ({
+                    name: series.name,
+                    data: series.data.map(point => [new Date(point.date).getTime(), point.value])
+                })),
+                tooltip: {
+                    useHTML: true,
+                    headerFormat: '<p>{point.x:%Y-%m-%d}</p><br>',
+                    pointFormat: '<b>{series.name}</b>: {point.y:.0f} cases<br>'
+                },
+                plotOptions: {
+                    line: {
+                        marker: { enabled: true, radius: 4 }
+                    }
+                },
+                exporting: { enabled: true },
+                accessibility: { enabled: false }
+            });
+        })
+        .catch(error => {
+            console.error('Error rendering trend plot:', error);
+            const trendPlot = document.getElementById('national_trend_plot');
+            if (trendPlot) {
+                trendPlot.innerHTML = `<p>Error loading trend plot: ${error.message}</p>`;
+            }
+        });
+    }
 });
-
-
