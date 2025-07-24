@@ -93,7 +93,6 @@ def allowed_files(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower in app.config['POLICY_EXTENSIONS']
 
 
-
 """
 MODELS TO UPLOAD FILE ,CATEGORY AND DESCRIPTIONS
 """
@@ -123,28 +122,19 @@ Load DATA
 """
 # All surveillance data
 all_data = os.getenv('ALL_DATA')
-if not all_data:
-    raise ValueError("Environment variable 'ALL_DATA' is not set.")
 allSurve = pd.read_csv(all_data)
 allSurve['Report_Date'] = pd.to_datetime(allSurve['Report_Date'])
 
-
 # Population data
 all_population = os.getenv('POPULATION_DATA')
-if not all_population:
-    raise ValueError("Environment variable 'POPULATION_DATA' is not set.")
 allPopulation = pd.read_csv(all_population)
 
 # moving average
 moving_average = os.getenv('KABS_THRESHOLD')
-if not moving_average:
-    raise ValueError("Environment variable 'KABS_THRESHOLD' is not set.")
 moving_average = pd.read_csv(moving_average)
 
 # Diseases threshold
 disease_threshold = os.getenv('DISEASE_THRESHOLD')
-if not disease_threshold:
-    raise ValueError("Environment variable 'DISEASE_THRESHOLD' is not set.")
 disease_threshold = pd.read_csv(disease_threshold)
 
 
