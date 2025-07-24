@@ -55,7 +55,7 @@ user = os.getenv('CONTABO_USER')
 password = os.getenv('DB_PASSWORD')
 server = os.getenv('CONTABO_SERVER')
 db1 = os.getenv('CONTABO_NAME')
-port = os.getenv('DB_PORT','5432')
+port = os.getenv('DB_PORT')
 
 """
 Load the base model
@@ -111,7 +111,7 @@ class User(db.Model):
     password = db.Column(db.String, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.UTC))
 
-class Policy(db.Model):
+class Policy(Base):
     __tablename__ = 'dvspolicy'
     id = Column(Integer, primary_key=True, autoincrement=True)
     filename = Column(String, nullable=False, unique=True)
@@ -1683,16 +1683,18 @@ def upload_policy():
                 data_type=data_type,
                 data_access=data_access
             )
-            db.session.add(policy)
-            db.session.commit()
+            session.add(policy)
+            session.commit()
             flash('Policy file uploaded successfully!', 'success')
             return redirect(url_for('policy'))
         return render_template('upload_policy.html', category_titles=CATEGORY_TITLES)
     except Exception as e:
-        db.session.rollback()
+        session.rollback()
         logger.error(f"Error uploading policy: {str(e)}")
         flash(f"Error uploading policy: {str(e)}", 'error')
         return redirect(url_for('upload_policy'))
+    finally:
+        session.close()
 
 """
 DISPLAY POLICY FILES
@@ -1700,7 +1702,7 @@ DISPLAY POLICY FILES
 @app.route('/policy', methods=['GET'])
 def policy():
     try:
-        policies = db.session.query(Policy).all()
+        policies = session.query(Policy).all()
         policy_list = [{
             'id': p.id,
             'filename': p.filename,
@@ -1724,7 +1726,6 @@ def policy():
                                error="Failed to load policies")
     finally:
         session.close()
-
 """
 VIEW POLICY FILES
 """
