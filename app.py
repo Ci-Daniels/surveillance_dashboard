@@ -5,7 +5,7 @@ import json
 from flask_sqlalchemy import SQLAlchemy
 import paramiko
 import pytz
-from sqlalchemy import DateTime, create_engine, inspect, Column, String, Integer
+from sqlalchemy import DateTime, create_engine, Column, String, Integer
 from flask import session as flask_session
 import markdown2
 import logging
@@ -50,7 +50,7 @@ user = os.getenv('CONTABO_USER')
 password = os.getenv('DB_PASSWORD')
 server = os.getenv('CONTABO_SERVER')
 db1 = os.getenv('CONTABO_NAME')
-port = os.getenv('DB_PORT')
+port = os.getenv('DB_PORT','5432')
 
 """
 Load the base model
@@ -62,21 +62,6 @@ APP CONFIGURATIONS
 """
 app.config['SQLALCHEMY_DATABASE_URI'] = f'postgresql://{user}:{password}@{server}:{port}/{db1}'
 app.config['SESSION_PERMANENT'] = False  # session expires when the browser closed
-
-"""
-INITIALIZE CONTABO STORAGE
-"""
-app.config['CONTABO_USER']= os.getenv('CONTABO_USER')
-app.config['CONTABO_PASSWORD'] = os.getenv('DB_PASSWORD')
-app.config['CONTABO_HOST']= os.getenv('CONTABO_SERVER')
-"""
-INITIALIZE POLICIES EXTENSION
-"""
-app.config['UPLOAD_POLICIES'] = '/home/cema/dvs/policies'
-app.config['POLICY_EXTENSIONS'] = {'pdf','png','doc','docx', 'docm'}
-# dvs/policies
-def allowed_files(filename):
-    return "." in filename and filename.rsplit(".", 1)[1].lower in app.config['POLICY_EXTENSIONS']
 
 """
 Initialize database connection and SQLAlchemy
@@ -93,10 +78,21 @@ Session = sessionmaker(bind=engine1)
 session = Session()
 
 """
-Create database models
+INITIALIZE CONTABO STORAGE
 """
-Base = declarative_base()
-Base.metadata.create_all(engine1)
+app.config['CONTABO_USER']= os.getenv('CONTABO_USER')
+app.config['CONTABO_PASSWORD'] = os.getenv('DB_PASSWORD')
+app.config['CONTABO_HOST']= os.getenv('CONTABO_SERVER')
+"""
+INITIALIZE POLICIES EXTENSION
+"""
+app.config['UPLOAD_POLICIES'] = '/home/cema/dvs/policies'
+app.config['POLICY_EXTENSIONS'] = {'pdf','png','doc','docx', 'docm'}
+# dvs/policies
+def allowed_files(filename):
+    return "." in filename and filename.rsplit(".", 1)[1].lower in app.config['POLICY_EXTENSIONS']
+
+
 
 """
 MODELS TO UPLOAD FILE ,CATEGORY AND DESCRIPTIONS
