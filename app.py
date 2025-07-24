@@ -1,4 +1,5 @@
 from flask import Flask, flash, jsonify, redirect, render_template, request, send_file, url_for
+from flask_compress import Compress
 import os 
 import re
 import json
@@ -19,12 +20,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+from cachetools import TTLCache, cached
 
 load_dotenv()
 
 app = Flask(__name__)
-#app.secret_key = os.getenv('SECRET_KEY')
+Compress(app)
 app.secret_key = 'KmU5J1oi3Y8eGm647TXkJmmisgEvIkHPj-s1F91LdXY'
+
+""" Cache map data for faster responses """
+cache = TTLCache(maxsize=500, ttl=3600)
 
 """
 Initialize logging
@@ -106,7 +111,7 @@ class User(db.Model):
     password = db.Column(db.String, nullable=False)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(pytz.UTC))
 
-class Policy(Base):
+class Policy(db.Model):
     __tablename__ = 'dvspolicy'
     id = Column(Integer, primary_key=True, autoincrement=True)
     filename = Column(String, nullable=False, unique=True)
@@ -115,7 +120,7 @@ class Policy(Base):
     keywords = Column(String)
     data_type = Column(String)
     data_access = Column(String, nullable=False)
-    upload_timestamp = Column(DateTime, default=datetime.now(timezone.utc))
+    upload_timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 """
 Load DATA
@@ -843,6 +848,7 @@ def get_disease_data():
     ]
     return jsonify({'categories': highburden['Disease_Condition'].tolist(), 'data': data})
 
+@cached(cache, key=lambda year, month, disease: f"map_data_{year}_{month}_{disease}")
 @app.route('/get_map_data', methods=['POST'])
 def get_map_data():
     year = request.form['year']
@@ -923,6 +929,7 @@ def get_counties():
         counties = sorted(allSurve['county'].unique())
     return jsonify(counties)
 
+@cached(cache, key=lambda disease: f"national_map_{disease}")
 @app.route('/get_national_map_data', methods=['POST'])
 def get_national_map_data():
     disease = request.form['disease']
@@ -943,6 +950,7 @@ def get_national_map_data():
         'grouped_details': grouped_data.to_dict(orient='records')
     })
 
+@cached(cache, key=lambda disease, county: f"county_map_{disease}_{county}")
 @app.route('/get_county_map_data', methods=['POST'])
 def get_county_map_data():
     disease = request.form['disease']
@@ -1046,15 +1054,9 @@ def animal_surveillance(section):
     return render_template('animal_surveillance.html', section=section)
 
 """ HELPER FUNCTION TO CHECK LOGIN STATUS FOR TEMPLATES """
-"""
-@app.context_processor
-def inject_user():
-    return dict(
-        is_logged_in='user_id' in flask_session,
-        current_user=flask_session.get('username'),
-        user_workstation=flask_session.get('workstation')
-    )
-"""
+
+""" county """
+@cached(cache, key=lambda county, subcounty, disease, clicked_disease: f"county_surveillance_{county}_{subcounty}_{disease}_{clicked_disease}")
 @app.route('/get_county_surveillance_data', methods=['POST'])
 def get_county_surveillance_data():
     county = request.form.get('county')
@@ -1091,7 +1093,6 @@ def get_county_surveillance_data():
     priority_data = allSurve[allSurve['county'] == county].groupby(['county', 'Disease_Condition'])['Number_Sick'].sum().reset_index()
     priority_data = priority_data.rename(columns={'Number_Sick': 'value'})
     priority_data = priority_data.sort_values('value', ascending=False).head(10)
-  
 
     # Trend data (for clicked disease)
     trend_data = allSurve[allSurve['Disease_Condition'] == clicked_disease] if clicked_disease else pd.DataFrame()
@@ -1099,12 +1100,10 @@ def get_county_surveillance_data():
         trend_data = trend_data.groupby(['Disease_Condition', 'Report_Date', 'Species_Affected'])['Number_Sick'].sum().reset_index()
         trend_data['Month'] = pd.to_datetime(trend_data['Report_Date']).dt.strftime('%Y-%m')
         trend_data = trend_data.rename(columns={'Number_Sick': 'value'})
-      
         trend_data = trend_data.groupby(['Species_Affected', 'Month'])['value'].sum().reset_index()
         trend_data = trend_data.sort_values('Month')
 
     # Shapefiles
-    # Filter shapefiles to match R logic
     county_shapefile = {
         "type": "FeatureCollection",
         "features": [f for f in sub_shapefile_json.get('features', []) if f.get('properties', {}).get('county') == county]
@@ -1113,7 +1112,6 @@ def get_county_surveillance_data():
         "type": "FeatureCollection",
         "features": [f for f in ward_shapefile_json.get('features', []) if f.get('properties', {}).get('county') == county and f.get('properties', {}).get('sub_county') == subcounty]
     }
-
 
     # Debug shapefile properties
     print(f"County shapefile properties for {county}:", [f['properties'] for f in county_shapefile['features'][:2]])
@@ -1143,41 +1141,47 @@ def get_county_surveillance_data():
         'ward_shapefile': ward_shapefile
     })
 
+""" animal population """
 @app.route('/get_population_data', methods=['POST'])
 def get_population_data():
     species = request.form.get('species')
     
-    # Validate species
-    if species not in allPopulation['Species'].unique():
+    # Validate species before caching
+    if not species or species not in allPopulation['Species'].unique():
         return jsonify({'error': 'Invalid species'}), 400
 
-    # Filter data by species
-    df_species = allPopulation[allPopulation['Species'] == species]
-    
-    # Map data
-    map_data = df_species.groupby('county')['value'].sum().reset_index()
-    map_data = map_data.rename(columns={'value': 'value'})
-    
-    # Bar plot data (sorted by population descending)
-    bar_data = df_species[df_species['value'] > 0].groupby('county')['value'].sum().reset_index()
-    bar_data = bar_data.rename(columns={'value': 'value'}).sort_values('value', ascending=False)
-    
-    print(f"Population data for {species}:", {
-        'map_data': map_data.to_dict(orient='records'),
-        'bar_data': bar_data.to_dict(orient='records')
-    })
+    @cached(cache, key=lambda s: f"population_data_{s}")
+    def compute_population_data(species):
+        # Filter data by species
+        df_species = allPopulation[allPopulation['Species'] == species]
+        
+        # Map data
+        map_data = df_species.groupby('county')['value'].sum().reset_index()
+        map_data = map_data.rename(columns={'value': 'value'})
+        
+        # Bar plot data (sorted by population descending)
+        bar_data = df_species[df_species['value'] > 0].groupby('county')['value'].sum().reset_index()
+        bar_data = bar_data.rename(columns={'value': 'value'}).sort_values('value', ascending=False)
+        
+        print(f"Population data for {species}:", {
+            'map_data': map_data.to_dict(orient='records'),
+            'bar_data': bar_data.to_dict(orient='records')
+        })
 
-    return jsonify({
-        'map_data': {
-            'data': map_data.to_dict(orient='records'),
-            'shapefile': shapefile_json
-        },
-        'bar_data': {
-            'counties': bar_data['county'].tolist(),
-            'values': bar_data['value'].tolist()
+        return {
+            'map_data': {
+                'data': map_data.to_dict(orient='records'),
+                'shapefile': shapefile_json
+            },
+            'bar_data': {
+                'counties': bar_data['county'].tolist(),
+                'values': bar_data['value'].tolist()
+            }
         }
-    })
 
+    return jsonify(compute_population_data(species))
+
+""" priority diseases """
 @app.route('/priority-diseases/<disease>')
 def priority_diseases(disease):
     valid_diseases = {
@@ -1199,6 +1203,7 @@ def priority_diseases(disease):
     disease_name = valid_diseases[disease]
     return render_template('priority_diseases.html', disease=disease, disease_name=disease_name)
 
+@cached(cache, key=lambda disease, time_period, indicator: f"disease_visuals_{disease}_{time_period}_{indicator}")
 @app.route('/get_disease_visuals/<disease>', methods=['POST'])
 def get_disease_visuals(disease):
     time_period = request.form.get('time_period', '1y')  
@@ -1291,6 +1296,7 @@ def get_disease_visuals(disease):
         'table_data': table_data.to_dict(orient='records'),
         'about_text': about_text
     })
+
 
 """
 DISEASES THRESHOLD 
@@ -1677,18 +1683,16 @@ def upload_policy():
                 data_type=data_type,
                 data_access=data_access
             )
-            session.add(policy)
-            session.commit()
+            db.session.add(policy)
+            db.session.commit()
             flash('Policy file uploaded successfully!', 'success')
             return redirect(url_for('policy'))
         return render_template('upload_policy.html', category_titles=CATEGORY_TITLES)
     except Exception as e:
-        session.rollback()
+        db.session.rollback()
         logger.error(f"Error uploading policy: {str(e)}")
         flash(f"Error uploading policy: {str(e)}", 'error')
         return redirect(url_for('upload_policy'))
-    finally:
-        session.close()
 
 """
 DISPLAY POLICY FILES
@@ -1696,7 +1700,7 @@ DISPLAY POLICY FILES
 @app.route('/policy', methods=['GET'])
 def policy():
     try:
-        policies = session.query(Policy).all()
+        policies = db.session.query(Policy).all()
         policy_list = [{
             'id': p.id,
             'filename': p.filename,
