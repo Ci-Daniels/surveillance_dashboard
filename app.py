@@ -37,20 +37,20 @@ SET UP DATABASE CONFIGS
 """
 Local db
 """
-user = os.getenv('DB_USER')
-password = os.getenv('DB_PASSWORD')
-server = os.getenv('DB_SERVER')
-db1 = os.getenv('DB_NAME_1')
-port = os.getenv('DB_PORT')
+#user = os.getenv('DB_USER')
+#password = os.getenv('DB_PASSWORD')
+#server = os.getenv('DB_SERVER')
+#db1 = os.getenv('DB_NAME_1')
+#port = os.getenv('DB_PORT')
 
 """
 Contabo db
 """
-#user = os.getenv('CONTABO_USER')
-#password = os.getenv('DB_PASSWORD')
-#server = os.getenv('CONTABO_SERVER')
-#db1 = os.getenv('CONTABO_NAME')
-#port = os.getenv('DB_PORT')
+user = os.getenv('CONTABO_USER')
+password = os.getenv('DB_PASSWORD')
+server = os.getenv('CONTABO_SERVER')
+db1 = os.getenv('CONTABO_NAME')
+port = os.getenv('DB_PORT')
 
 """
 Load the base model
